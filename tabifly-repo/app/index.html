@@ -573,15 +573,22 @@
   // 3. Active "Firestore Database" (mode test pour commencer)
   // 4. Remplace firebaseConfig ci-dessous par la config de TON projet
   //    (Paramètres du projet > Général > Tes applications > config SDK)
-const firebaseConfig = {
-  apiKey: "AIzaSyAzzSSeIuoASs-rFETmG_vILVQ4ewDZ8u8",
-  authDomain: "tabifly.firebaseapp.com",
-  projectId: "tabifly",
-  storageBucket: "tabifly.firebasestorage.app",
-  messagingSenderId: "299925233483",
-  appId: "1:299925233483:web:cd94631b4368d66a0dd2ce",
-  measurementId: "G-J36ZX8JWFL"
-};
+  const firebaseConfig = {
+    apiKey: "REMPLACE_MOI",
+    authDomain: "REMPLACE_MOI.firebaseapp.com",
+    projectId: "REMPLACE_MOI",
+    storageBucket: "REMPLACE_MOI.appspot.com",
+    messagingSenderId: "REMPLACE_MOI",
+    appId: "REMPLACE_MOI"
+  };
+
+  // Clé VAPID pour les notifications push web (FCM) :
+  // Firebase > Paramètres du projet > Cloud Messaging > Configuration Web
+  // > "Générer une paire de clés". Sans elle, l'enregistrement du jeton
+  // de notification échoue silencieusement (fonctionnalité désactivée,
+  // le reste de l'app continue de fonctionner normalement).
+  const FCM_VAPID_KEY = "BGj2576Ghzba6oww0x7_TTnYEqKdyhXMgVsGu3TZKr7jpXn7WW2gtM63EbmdjFx1_fULv8dTxUtL2Ksx6_ioNlM";
+
   let db = null, uid = null, saveTimer = null, firebaseReady = false;
 
   function setSyncStatus(text){ const el = $('sync-status'); if (el) el.textContent = text; }
@@ -633,7 +640,7 @@ const firebaseConfig = {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') return;
       const messagingInstance = firebase.messaging();
-      const token = await messagingInstance.getToken();
+      const token = await messagingInstance.getToken({ vapidKey: FCM_VAPID_KEY });
       if (token){
         await db.collection('users').doc(uid).set({ fcmToken: token }, { merge: true });
       }
