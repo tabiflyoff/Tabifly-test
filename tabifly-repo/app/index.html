@@ -630,23 +630,26 @@ const firebaseConfig = {
 
   // Enregistre le jeton FCM de cet appareil dans Firestore, pour que la
   // Cloud Function serveur sache où envoyer les notifications même app fermée.
-  // NÉCESSITE : avoir renseigné messagingSenderId dans firebaseConfig ci-dessus
-  // et, pour un vrai déploiement web, un fichier firebase-messaging-sw.js
-  // (service worker) à la racine du site. Sans ça, cette fonction échoue
-  // silencieusement et l'app continue de fonctionner en mode "vérification
+  // NÉCESSITE : firebase-messaging-sw.js présent au même niveau que index.html
+  // (voir ce fichier — remplace-y aussi ta config Firebase), et messagingSenderId
+  // renseigné dans firebaseConfig ci-dessus. Sans ça, cette fonction échoue
+  // silencieusement (regarde la console : un message "Jeton FCM non disponible"
+  // apparaît alors), et l'app continue de fonctionner en mode "vérification
   // à l'écran" comme avant.
   async function registerFcmToken(){
     try{
-      if (!('Notification' in window)) return;
+      if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') return;
+      const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
       const messagingInstance = firebase.messaging();
-      const token = await messagingInstance.getToken({ vapidKey: FCM_VAPID_KEY });
+      const token = await messagingInstance.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: registration });
       if (token){
         await db.collection('users').doc(uid).set({ fcmToken: token }, { merge: true });
+        setSyncStatus('Synchronisé ✓ (notifications activées)');
       }
     } catch(err){
-      console.warn('Jeton FCM non disponible (normal en test local sans service worker) :', err.message);
+      console.warn('Jeton FCM non disponible :', err.message);
     }
   }
 
