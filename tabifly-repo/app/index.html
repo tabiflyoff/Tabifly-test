@@ -582,6 +582,7 @@ const firebaseConfig = {
   appId: "1:299925233483:web:cd94631b4368d66a0dd2ce",
   measurementId: "G-J36ZX8JWFL"
 };
+
   // Clé VAPID pour les notifications push web (FCM) :
   // Firebase > Paramètres du projet > Cloud Messaging > Configuration Web
   // > "Générer une paire de clés". Sans elle, l'enregistrement du jeton
@@ -814,7 +815,7 @@ const firebaseConfig = {
   async function getFxRates(){
     const today = new Date().toDateString();
     if (fxCacheDate === today && Object.keys(fxRatesCache).length) return fxRatesCache; // évite un appel réseau à chaque frappe
-    const res = await fetch('https://api.frankfurter.app/latest?from=EUR&to=USD,GBP,JPY,CAD');
+    const res = await fetch('https://api.frankfurter.dev/v1/latest?from=EUR&to=USD,GBP,JPY,CAD');
     if (!res.ok) throw new Error('Erreur API taux de change');
     const data = await res.json();
     fxRatesCache = data.rates;
