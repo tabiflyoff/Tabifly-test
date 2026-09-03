@@ -207,12 +207,12 @@
 
       <div class="section-title">Alertes voyage</div>
       <div class="card" style="border-left:3px solid var(--amber);">
-        <div class="row"><span class="k">Météo destination</span><span class="v" style="font-size:13px;">Ensoleillé, 24°C</span></div>
+        <div class="row"><span class="k" id="weather-label">Météo destination</span><span class="v" id="weather-value" style="font-size:13px;">Renseigne un vol pour voir la météo</span></div>
       </div>
       <div class="card" style="border-left:3px solid var(--green);">
         <div class="row"><span class="k">Trafic aérien</span><span class="v" style="font-size:13px;">Aucune perturbation signalée</span></div>
       </div>
-      <div class="note">Module à connecter à un flux réel (météo, grèves, sécurité) en V2 — pour le MVP, ces cartes illustrent le principe.</div>
+      <div class="note">Météo en temps réel via Open-Meteo. Le trafic aérien reste illustratif pour le MVP — pas d'API gratuite fiable équivalente.</div>
 
       <div class="ad-banner">
         <div class="ad-label">Publicité</div>
@@ -248,6 +248,12 @@
         <div class="note">Checklist, dépenses et profil sont sauvegardés automatiquement sur ton compte, même si tu fermes l'app.</div>
       </div>
 
+      <div class="section-title">Notifications</div>
+      <div class="card">
+        <button class="full secondary" id="retry-fcm-btn">Activer / réessayer les notifications push</button>
+        <div class="note">Utile si tu as refusé la demande par erreur, ou changé de navigateur/appareil.</div>
+      </div>
+
       <div class="section-title">Zone sensible</div>
       <div class="card" style="border-color:rgba(255,90,70,0.3);">
         <button class="full" id="delete-account-btn" style="background:var(--white); color:var(--coral); border:1px solid var(--coral);">Supprimer mon compte et mes données</button>
@@ -277,7 +283,7 @@
         <label>Date du vol</label>
         <input type="date" id="flightDate" />
         <label>Clé API AeroDataBox (RapidAPI) — optionnel</label>
-        <input type="text" id="apiKey" placeholder="laisse vide pour tester en mode simulation" />
+        <input type="text" id="apiKey" placeholder="50b7481518msh5f57d9f4de85701p1bb0b8jsna216d8bc120b" />
         <button class="full" id="startBtn">Suivre ce vol</button>
         <div class="note">Sans clé API : mode simulation (porte factice qui change après ~3 vérifications) pour tester la logique de notification.</div>
       </div>
@@ -573,21 +579,29 @@
   // 3. Active "Firestore Database" (mode test pour commencer)
   // 4. Remplace firebaseConfig ci-dessous par la config de TON projet
   //    (Paramètres du projet > Général > Tes applications > config SDK)
-  const firebaseConfig = {
-    apiKey: "REMPLACE_MOI",
-    authDomain: "REMPLACE_MOI.firebaseapp.com",
-    projectId: "REMPLACE_MOI",
-    storageBucket: "REMPLACE_MOI.appspot.com",
-    messagingSenderId: "REMPLACE_MOI",
-    appId: "REMPLACE_MOI"
-  };
+ const firebaseConfig = {
+  apiKey: "AIzaSyAzzSSeIuoASs-rFETmG_vILVQ4ewDZ8u8",
+  authDomain: "tabifly.firebaseapp.com",
+  projectId: "tabifly",
+  storageBucket: "tabifly.firebasestorage.app",
+  messagingSenderId: "299925233483",
+  appId: "1:299925233483:web:cd94631b4368d66a0dd2ce",
+  measurementId: "G-J36ZX8JWFL"
+};
+
+  // Clé VAPID pour les notifications push web (FCM) :
+  // Firebase > Paramètres du projet > Cloud Messaging > Configuration Web
+  // > "Générer une paire de clés". Sans elle, l'enregistrement du jeton
+  // de notification échoue silencieusement (fonctionnalité désactivée,
+  // le reste de l'app continue de fonctionner normalement).
+  const FCM_VAPID_KEY = "BGj2576Ghzba6oww0x7_TTnYEqKdyhXMgVsGu3TZKr7jpXn7WW2gtM63EbmdjFx1_fULv8dTxUtL2Ksx6_ioNlM";
 
   let db = null, uid = null, saveTimer = null, firebaseReady = false;
 
   function setSyncStatus(text){ const el = $('sync-status'); if (el) el.textContent = text; }
 
   function initFirebase(){
-    if (firebaseConfig.apiKey === "REMPLACE_MOI"){
+    if (firebaseConfig.apiKey === ""){
       setSyncStatus('Non configuré — voir le commentaire dans le code');
       return;
     }
@@ -622,23 +636,39 @@
 
   // Enregistre le jeton FCM de cet appareil dans Firestore, pour que la
   // Cloud Function serveur sache où envoyer les notifications même app fermée.
-  // NÉCESSITE : avoir renseigné messagingSenderId dans firebaseConfig ci-dessus
-  // et, pour un vrai déploiement web, un fichier firebase-messaging-sw.js
-  // (service worker) à la racine du site. Sans ça, cette fonction échoue
-  // silencieusement et l'app continue de fonctionner en mode "vérification
+  // NÉCESSITE : firebase-messaging-sw.js présent au même niveau que index.html
+  // (voir ce fichier — remplace-y aussi ta config Firebase), et messagingSenderId
+  // renseigné dans firebaseConfig ci-dessus. Sans ça, cette fonction échoue
+  // silencieusement (regarde la console : un message "Jeton FCM non disponible"
+  // apparaît alors), et l'app continue de fonctionner en mode "vérification
   // à l'écran" comme avant.
   async function registerFcmToken(){
     try{
-      if (!('Notification' in window)) return;
+      if (!('Notification' in window) || !('serviceWorker' in navigator)){
+        console.log('FCM : API Notification ou Service Worker indisponible sur ce navigateur.');
+        return;
+      }
+      console.log('FCM : permission actuelle =', Notification.permission);
       const permission = await Notification.requestPermission();
-      if (permission !== 'granted') return;
+      console.log('FCM : permission après demande =', permission);
+      if (permission !== 'granted'){
+        setSyncStatus('Notifications refusées — réactive-les dans les réglages du site puis réessaie.');
+        return;
+      }
+      const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+      console.log('FCM : service worker enregistré, scope =', registration.scope);
       const messagingInstance = firebase.messaging();
-      const token = await messagingInstance.getToken();
+      const token = await messagingInstance.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: registration });
+      console.log('FCM : jeton obtenu =', token ? token.slice(0, 20) + '...' : '(vide)');
       if (token){
         await db.collection('users').doc(uid).set({ fcmToken: token }, { merge: true });
+        setSyncStatus('Synchronisé ✓ (notifications activées)');
+      } else {
+        setSyncStatus('Jeton de notification vide — voir la console pour le détail.');
       }
     } catch(err){
-      console.warn('Jeton FCM non disponible (normal en test local sans service worker) :', err.message);
+      console.error('FCM : erreur complète :', err);
+      setSyncStatus('Erreur notifications : ' + err.message);
     }
   }
 
@@ -652,7 +682,10 @@
         if (data.expenses) expenses = data.expenses;
         if (typeof data.isPremium === 'boolean'){ isPremium = data.isPremium; if (typeof applyPremiumUI === 'function') applyPremiumUI(); }
         if (data.badgeUnlockDetails) badgeUnlockDetails = data.badgeUnlockDetails;
-        if (data.lastFlightContext) lastFlightContext = data.lastFlightContext;
+        if (data.lastFlightContext){
+          lastFlightContext = data.lastFlightContext;
+          if (lastFlightContext?.destination && typeof updateWeatherAlert === 'function') updateWeatherAlert(lastFlightContext.destination);
+        }
         if (data.stats){ stats = Object.assign({ flightsCount:0, totalKm:0, destinations:[], checklistCompleted:false, luggageDocumented:false }, data.stats); if (typeof renderBadges === 'function') renderBadges(); }
         if (data.account){
           $('acc-name').value = data.account.name || '';
@@ -737,6 +770,11 @@
 
   // Suppression de compte — exigence obligatoire du Play Store pour toute
   // app proposant un compte utilisateur (données stockées côté serveur).
+  $('retry-fcm-btn').addEventListener('click', () => {
+    setSyncStatus('Tentative d\'activation des notifications...');
+    registerFcmToken();
+  });
+
   $('delete-account-btn').addEventListener('click', async () => {
     const confirmed = confirm('Supprimer définitivement ton compte et toutes tes données ? Cette action est irréversible.');
     if (!confirmed) return;
@@ -807,7 +845,7 @@
   async function getFxRates(){
     const today = new Date().toDateString();
     if (fxCacheDate === today && Object.keys(fxRatesCache).length) return fxRatesCache; // évite un appel réseau à chaque frappe
-    const res = await fetch('https://api.frankfurter.app/latest?from=EUR&to=USD,GBP,JPY,CAD');
+    const res = await fetch('https://api.frankfurter.dev/v1/latest?from=EUR&to=USD,GBP,JPY,CAD');
     if (!res.ok) throw new Error('Erreur API taux de change');
     const data = await res.json();
     fxRatesCache = data.rates;
@@ -1016,6 +1054,61 @@
     return 1500; // estimation par défaut pour une destination inconnue
   }
 
+  // --- MÉTÉO DESTINATION (Open-Meteo, gratuite, sans clé) ---
+  // Coordonnées des aéroports déjà connus (mêmes routes que la table de
+  // distances). Enrichis cette table au fil des destinations réellement
+  // suivies plutôt que d'essayer de couvrir tous les aéroports du monde.
+  const airportCoords = {
+    CDG: { lat: 49.0097, lon: 2.5479, ville: 'Paris' },
+    JFK: { lat: 40.6413, lon: -73.7781, ville: 'New York' },
+    LAX: { lat: 33.9416, lon: -118.4085, ville: 'Los Angeles' },
+    NRT: { lat: 35.7720, lon: 140.3929, ville: 'Tokyo' },
+    DXB: { lat: 25.2532, lon: 55.3657, ville: 'Dubaï' },
+    BKK: { lat: 13.6900, lon: 100.7501, ville: 'Bangkok' },
+    MRS: { lat: 43.4393, lon: 5.2214, ville: 'Marseille' },
+    BCN: { lat: 41.2974, lon: 2.0833, ville: 'Barcelone' },
+    FCO: { lat: 41.8003, lon: 12.2389, ville: 'Rome' },
+    LIS: { lat: 38.7813, lon: -9.1359, ville: 'Lisbonne' },
+    MAD: { lat: 40.4983, lon: -3.5676, ville: 'Madrid' },
+    LHR: { lat: 51.4700, lon: -0.4543, ville: 'Londres' },
+    YUL: { lat: 45.4706, lon: -73.7408, ville: 'Montréal' },
+    SIN: { lat: 1.3644, lon: 103.9915, ville: 'Singapour' },
+    SYD: { lat: -33.9399, lon: 151.1753, ville: 'Sydney' },
+    TLS: { lat: 43.6293, lon: 1.3638, ville: 'Toulouse' }
+  };
+
+  // Table simplifiée des codes météo WMO utilisés par Open-Meteo
+  function weatherCodeToText(code){
+    if (code === 0) return 'Ciel dégagé';
+    if ([1,2,3].includes(code)) return 'Partiellement nuageux';
+    if ([45,48].includes(code)) return 'Brouillard';
+    if ([51,53,55,56,57].includes(code)) return 'Bruine';
+    if ([61,63,65,66,67,80,81,82].includes(code)) return 'Pluie';
+    if ([71,73,75,77,85,86].includes(code)) return 'Neige';
+    if ([95,96,99].includes(code)) return 'Orages';
+    return 'Conditions variables';
+  }
+
+  async function updateWeatherAlert(destinationCode){
+    const coords = airportCoords[destinationCode];
+    if (!coords){
+      $('weather-value').textContent = 'Météo indisponible pour cette destination';
+      return;
+    }
+    try{
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current=temperature_2m,weather_code`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Erreur API météo');
+      const data = await res.json();
+      const temp = Math.round(data.current.temperature_2m);
+      const desc = weatherCodeToText(data.current.weather_code);
+      $('weather-label').textContent = `Météo à ${coords.ville}`;
+      $('weather-value').textContent = `${desc}, ${temp}°C`;
+    } catch(err){
+      $('weather-value').textContent = '⚠️ Météo indisponible (hors ligne ou erreur réseau)';
+    }
+  }
+
   const badgeDefs = [
     { id:'first', ico:'🛫', name:'Premier envol', req:'1 vol suivi', check:() => stats.flightsCount >= 1 },
     { id:'five', ico:'☁️', name:'Habitué du ciel', req:'5 vols suivis', check:() => stats.flightsCount >= 5 },
@@ -1215,6 +1308,7 @@
         lastFlightContext = { flightNo: data.flightNo, date: date || new Date().toISOString().slice(0,10), origin: data.origin, destination: data.destination };
         renderBadges();
         scheduleSave();
+        updateWeatherAlert(data.destination);
       }
       else if (data.gate !== lastGate){
         $('fc-status').className = 'status-pill alert';
