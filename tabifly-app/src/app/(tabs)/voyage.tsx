@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity } from 'react-native';
 import { COLORS, RADIUS } from '../../theme/colors';
+import { useAppData } from '../../lib/useAppData';
 
 type FlightData = {
   flightNo: string; status: string; terminal: string; gate: string;
@@ -15,7 +16,19 @@ const POSITIONS = [
   { label: "Salle d'embarquement", minutes: 2 },
 ];
 
+// Table de distances connues entre aéroports (approche "villes connues",
+// suffisante pour les badges — pas besoin de précision GPS ici).
+const DISTANCE_TABLE: Record<string, number> = {
+  'CDG-JFK': 5837, 'JFK-CDG': 5837, 'CDG-LAX': 9124, 'CDG-NRT': 9714,
+  'CDG-DXB': 5240, 'CDG-BKK': 9540, 'CDG-MRS': 660, 'MRS-CDG': 660,
+  'CDG-TLS': 590, 'TLS-CDG': 590, 'CDG-BCN': 830, 'BCN-CDG': 830,
+};
+function estimateDistance(origin: string, destination: string) {
+  return DISTANCE_TABLE[`${origin}-${destination}`] || 1500;
+}
+
 export default function VoyageScreen() {
+  const { data, update } = useAppData();
   const [flightNo, setFlightNo] = useState('');
   const [date, setDate] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -39,8 +52,8 @@ export default function VoyageScreen() {
         headers: { 'X-RapidAPI-Key': apiKey, 'X-RapidAPI-Host': 'aerodatabox.p.rapidapi.com' },
       });
       if (!res.ok) throw new Error(`Erreur API (${res.status})`);
-      const data = await res.json();
-      const f = Array.isArray(data) ? data[0] : data;
+      const json = await res.json();
+      const f = Array.isArray(json) ? json[0] : json;
       return {
         flightNo, status: f?.status || 'Inconnu', terminal: f?.departure?.terminal || '—',
         gate: f?.departure?.gate || '—', boardingTime: f?.departure?.scheduledTime?.local || '—',
@@ -57,17 +70,34 @@ export default function VoyageScreen() {
 
   async function checkFlight() {
     try {
-      const data = await fetchFlightStatus();
-      setFlight(data);
+      const flightData = await fetchFlightStatus();
+      setFlight(flightData);
+
       if (lastGateRef.current === null) {
-        lastGateRef.current = data.gate;
-        addLog(`Suivi démarré — porte actuelle : ${data.gate}`);
-      } else if (data.gate !== lastGateRef.current) {
-        addLog(`🔔 Porte changée : ${lastGateRef.current} → ${data.gate}`);
-        lastGateRef.current = data.gate;
-        // TODO : notification push locale ici via expo-notifications (Phase 3)
+        lastGateRef.current = flightData.gate;
+        addLog(`Suivi démarré — porte actuelle : ${flightData.gate}`);
+
+        // Alimente les statistiques de récompenses, comme sur le prototype web
+        const dist = estimateDistance(flightData.origin, flightData.destination);
+        const destKey = `${flightData.origin}-${flightData.destination}`;
+        const newDestinations = data.stats.destinations.includes(destKey)
+          ? data.stats.destinations
+          : [...data.stats.destinations, destKey];
+        const newStats = {
+          ...data.stats,
+          flightsCount: data.stats.flightsCount + 1,
+          totalKm: data.stats.totalKm + dist,
+          destinations: newDestinations,
+        };
+        update({
+          stats: newStats,
+          lastFlightContext: { flightNo: flightData.flightNo, date: date || new Date().toISOString().slice(0, 10), origin: flightData.origin, destination: flightData.destination },
+        });
+      } else if (flightData.gate !== lastGateRef.current) {
+        addLog(`🔔 Porte changée : ${lastGateRef.current} → ${flightData.gate}`);
+        lastGateRef.current = flightData.gate;
       } else {
-        addLog(`Vérification OK — porte inchangée (${data.gate})`);
+        addLog(`Vérification OK — porte inchangée (${flightData.gate})`);
       }
     } catch (err: any) {
       addLog(`Erreur : ${err.message}`);
@@ -78,7 +108,7 @@ export default function VoyageScreen() {
     if (!flightNo.trim()) return;
     setTracking(true);
     checkFlight();
-    pollRef.current = setInterval(checkFlight, 180000); // 3 min, comme sur le prototype web
+    pollRef.current = setInterval(checkFlight, 180000);
   }
 
   useEffect(() => {

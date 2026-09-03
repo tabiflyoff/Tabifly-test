@@ -1,35 +1,26 @@
-import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity } from 'react-native';
+import { useState } from 'react';
 import { COLORS, RADIUS } from '../../theme/colors';
-
-type Item = { id: number; text: string; done: boolean };
-
-const DEFAULT_ITEMS: Item[] = [
-  "Passeport / carte d'identité",
-  "Billet d'avion / carte d'embarquement",
-  'Check-in en ligne effectué',
-  'Chargeur + batterie externe',
-  'Adaptateur de prise',
-  'Liquides ≤ 100ml dans un sac transparent',
-  'Assurance voyage',
-  'Copie des réservations (hôtel, transport)',
-].map((text, id) => ({ id, text, done: false }));
+import { useAppData } from '../../lib/useAppData';
 
 export default function ChecklistScreen() {
-  const [items, setItems] = useState<Item[]>(DEFAULT_ITEMS);
+  const { data, update } = useAppData();
   const [newItem, setNewItem] = useState('');
+  const items = data.checklist;
 
   const done = items.filter((i) => i.done).length;
   const total = items.length;
   const progress = total ? done / total : 0;
 
   function toggle(id: number) {
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, done: !i.done } : i)));
+    const next = items.map((i) => (i.id === id ? { ...i, done: !i.done } : i));
+    const completed = next.length > 0 && next.every((i) => i.done);
+    update({ checklist: next, stats: { ...data.stats, checklistCompleted: completed } });
   }
 
   function addItem() {
     if (!newItem.trim()) return;
-    setItems((prev) => [...prev, { id: Date.now(), text: newItem.trim(), done: false }]);
+    update({ checklist: [...items, { id: Date.now(), text: newItem.trim(), done: false }] });
     setNewItem('');
   }
 
