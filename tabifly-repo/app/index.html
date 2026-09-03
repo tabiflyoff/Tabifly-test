@@ -283,7 +283,7 @@
         <label>Date du vol</label>
         <input type="date" id="flightDate" />
         <label>Clé API AeroDataBox (RapidAPI) — optionnel</label>
-        <input type="text" id="apiKey" placeholder="50b7481518msh5f57d9f4de85701p1bb0b8jsna216d8bc120b" />
+        <input type="text" id="apiKey" placeholder="laisse vide pour tester en mode simulation" />
         <button class="full" id="startBtn">Suivre ce vol</button>
         <div class="note">Sans clé API : mode simulation (porte factice qui change après ~3 vérifications) pour tester la logique de notification.</div>
       </div>
@@ -579,7 +579,7 @@
   // 3. Active "Firestore Database" (mode test pour commencer)
   // 4. Remplace firebaseConfig ci-dessous par la config de TON projet
   //    (Paramètres du projet > Général > Tes applications > config SDK)
- const firebaseConfig = {
+const firebaseConfig = {
   apiKey: "AIzaSyAzzSSeIuoASs-rFETmG_vILVQ4ewDZ8u8",
   authDomain: "tabifly.firebaseapp.com",
   projectId: "tabifly",
@@ -587,7 +587,7 @@
   messagingSenderId: "299925233483",
   appId: "1:299925233483:web:cd94631b4368d66a0dd2ce",
   measurementId: "G-J36ZX8JWFL"
-};
+};;
 
   // Clé VAPID pour les notifications push web (FCM) :
   // Firebase > Paramètres du projet > Cloud Messaging > Configuration Web
@@ -601,7 +601,7 @@
   function setSyncStatus(text){ const el = $('sync-status'); if (el) el.textContent = text; }
 
   function initFirebase(){
-    if (firebaseConfig.apiKey === ""){
+    if (firebaseConfig.apiKey === "REMPLACE_MOI"){
       setSyncStatus('Non configuré — voir le commentaire dans le code');
       return;
     }
